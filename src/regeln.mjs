@@ -48,6 +48,15 @@ export function passtInBauraum(masse, bauraum) {
   return a.every((v, i) => v <= b[i]);
 }
 
+const FASER = /(CF|GF)/;
+
+/** Freigabe: Faser-Filamente nur mit eigenem Faser-Eintrag, sonst Präfix der Grundsorte (PLA MATTE → PLA). */
+export function materialFreigegeben(material, liste) {
+  if (!material) return false;
+  const faser = FASER.test(material);
+  return liste.some((m) => FASER.test(m) === faser && material.startsWith(m));
+}
+
 export function materialKlasse(material) {
   if (!material) return 'standard';
   if (/CF/.test(material)) return 'CF';
@@ -76,7 +85,7 @@ export function gebot(a, cfg, kundeMaxNetto = null) {
 /** Prüft einen Auftrag gegen die Regeln. Ergebnis: { ok, gruende[] } */
 export function pruefen(a, cfg, heute = new Date()) {
   const gr = [];
-  if (!a.material || !cfg.drucker.materialien.some((m) => a.material.startsWith(m))) gr.push(`Material ${a.material ?? '?'} nicht für X2D freigegeben`);
+  if (!materialFreigegeben(a.material, cfg.drucker.materialien)) gr.push(`Material ${a.material ?? '?'} nicht für X2D freigegeben`);
   if (!passtInBauraum(a.masse_mm, cfg.drucker.bauraum_mm)) gr.push('passt nicht in den Bauraum');
   if (a.druckzeit_h != null && a.druckzeit_h > cfg.regeln.max_druckzeit_h) gr.push(`Druckzeit ${a.druckzeit_h.toFixed(1)} h > ${cfg.regeln.max_druckzeit_h} h`);
   const ft = fristTage(a.frist, heute);

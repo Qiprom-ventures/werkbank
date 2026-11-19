@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseKarte, pruefen, gebot, untergrenze, fristTage, lieferzeit } from './regeln.mjs';
+import { parseKarte, pruefen, gebot, untergrenze, fristTage, lieferzeit, materialFreigegeben } from './regeln.mjs';
 
 const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
 
@@ -72,4 +72,16 @@ test('Ablehnung: zu groß, zu lang, Resin, knappe Frist', () => {
   const heute = new Date(2026, 10, 19);
   assert.equal(pruefen({ ...a, frist: 'bis 20.11.' }, cfg, heute).ok, false);
   assert.equal(fristTage('bis 30.11.', heute), 11);
+});
+
+test('Materialfreigabe: Faser nur mit eigenem Eintrag, Varianten der Grundsorte zählen mit', () => {
+  const liste = ['PLA', 'PETG'];
+  assert.equal(materialFreigegeben('PLA', liste), true);
+  assert.equal(materialFreigegeben('PLA MATTE', liste), true);
+  assert.equal(materialFreigegeben('PETG HF', liste), true);
+  assert.equal(materialFreigegeben('PLA-CF', liste), false);
+  assert.equal(materialFreigegeben('PETG-GF', liste), false);
+  assert.equal(materialFreigegeben('ASA', liste), false);
+  assert.equal(materialFreigegeben(null, liste), false);
+  assert.equal(materialFreigegeben('PA6-CF', ['PLA', 'PA6-CF']), true);
 });

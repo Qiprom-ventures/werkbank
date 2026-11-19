@@ -3,12 +3,12 @@
   "drucker": {
     "name": "Bambu Lab X2D",
     "bauraum_mm": [256, 256, 260],
-    "materialien": ["PLA", "PETG", "ABS", "ASA", "TPU", "PA", "PC", "PLA-CF", "PETG-CF", "PA-CF", "PA6-CF", "PA612-CF", "PAHT-CF"]
+    "materialien": ["PLA", "PETG"]
   },
   "regeln": {
     "max_druckzeit_h": 12,
     "min_frist_tage": 3,
-    "max_gebote_pro_tag": 3
+    "max_gebote_pro_tag": 1
   },
   "preis": {
     "material_eur_pro_g": { "PLA": 0.02, "PETG": 0.02, "ABS": 0.025, "ASA": 0.025, "TPU": 0.035, "PA": 0.05, "PC": 0.05, "CF": 0.06, "standard": 0.03 },

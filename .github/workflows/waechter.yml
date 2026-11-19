@@ -1,0 +1,71 @@
+name: werkbank
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # GitHub startet oft mit einigen Minuten Verzögerung
+  workflow_dispatch: {}
+
+concurrency:
+  group: werkbank
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  lauf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Abhängigkeiten
+        run: npm install --no-audit --no-fund
+
+      - name: Browser-Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Stand laden
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: stand-${{ github.run_id }}
+          restore-keys: stand-
+
+      - name: Sitzungen aus Secrets
+        env:
+          A_AUTH: ${{ secrets.A_AUTH }}
+          B_AUTH: ${{ secrets.B_AUTH }}
+        run: |
+          mkdir -p auth
+          if [ -n "$A_AUTH" ]; then printf '%s' "$A_AUTH" > auth/a.json; fi
+          if [ -n "$B_AUTH" ]; then printf '%s' "$B_AUTH" > auth/b.json; fi
+
+      - name: Lauf
+        env:
+          ZIEL_A: ${{ secrets.ZIEL_A }}
+          ZIEL_B: ${{ secrets.ZIEL_B }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TESTMODUS: ${{ vars.TESTMODUS }}
+        run: npm run waechter
+
+      - name: Aufräumen
+        if: always()
+        run: rm -rf auth
+
+      - name: Stand sichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: stand-${{ github.run_id }}

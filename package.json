@@ -1,0 +1,14 @@
+{
+  "name": "werkbank",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "waechter": "node src/waechter.mjs",
+    "anmelden": "node scripts/anmelden.mjs",
+    "test": "node --test src/regeln.test.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

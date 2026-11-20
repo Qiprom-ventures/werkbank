@@ -82,7 +82,8 @@ export function gebot(a, cfg, kundeMaxNetto = null) {
   return Math.round(g * 100) / 100;
 }
 
-/** Prüft einen Auftrag gegen die Regeln. Ergebnis: { ok, gruende[] } */
+/** Prüft einen Auftrag gegen die Regeln. Ergebnis: { ok, gruende[], nurMelden }
+ *  nurMelden: Material ist freigegeben, aber ohne automatisches Gebot (z. B. TPU: Härte vorher klären). */
 export function pruefen(a, cfg, heute = new Date()) {
   const gr = [];
   if (!materialFreigegeben(a.material, cfg.drucker.materialien)) gr.push(`Material ${a.material ?? '?'} nicht für X2D freigegeben`);
@@ -92,7 +93,7 @@ export function pruefen(a, cfg, heute = new Date()) {
   if (Number.isNaN(ft)) gr.push(`Frist nicht lesbar: ${a.frist}`);
   else if (ft !== null && ft < cfg.regeln.min_frist_tage) gr.push(`Frist zu knapp (${ft} Tage)`);
   if (a.schonGeboten) gr.push('bereits geboten');
-  return { ok: gr.length === 0, gruende: gr };
+  return { ok: gr.length === 0, gruende: gr, nurMelden: materialFreigegeben(a.material, cfg.drucker.nur_melden ?? []) };
 }
 
 export function lieferzeit(a, cfg) {

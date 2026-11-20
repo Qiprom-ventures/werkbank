@@ -85,3 +85,20 @@ test('Materialfreigabe: Faser nur mit eigenem Eintrag, Varianten der Grundsorte 
   assert.equal(materialFreigegeben(null, liste), false);
   assert.equal(materialFreigegeben('PA6-CF', ['PLA', 'PA6-CF']), true);
 });
+
+test('ABS wird geboten, TPU nur gemeldet, ASA und Faser bleiben gesperrt', () => {
+  const a = parseKarte(karte);
+  const abs = pruefen({ ...a, material: 'ABS' }, cfg);
+  assert.equal(abs.ok, true, abs.gruende.join(', '));
+  assert.equal(abs.nurMelden, false);
+  assert.equal(lieferzeit({ ...a, material: 'ABS' }, cfg), 6);
+  for (const m of ['TPU', 'TPU 95A']) {
+    const tpu = pruefen({ ...a, material: m }, cfg);
+    assert.equal(tpu.ok, true, tpu.gruende.join(', '));
+    assert.equal(tpu.nurMelden, true);
+  }
+  assert.equal(pruefen(a, cfg).nurMelden, false);
+  assert.equal(pruefen({ ...a, material: 'ASA' }, cfg).ok, false);
+  assert.equal(pruefen({ ...a, material: 'ABS-GF' }, cfg).ok, false);
+  assert.equal(pruefen({ ...a, material: 'PA6-CF' }, cfg).ok, false);
+});

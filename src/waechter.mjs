@@ -74,6 +74,10 @@ async function plattformA(browser) {
 
     const r = pruefen(a, cfg);
     if (!r.ok) { log('A: passt nicht –', a.titel, '–', r.gruende.join('; ')); continue; }
+    if (r.nurMelden) {
+      await push('Werkbank: Auftrag passt – bitte selbst prüfen', `${a.titel}\n${kurz(a)}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url: BOARD_A, tags: 'eyes' });
+      continue;
+    }
     if (geboteHeute() >= cfg.regeln.max_gebote_pro_tag) {
       await push('Werkbank: Auftrag passt – Tageslimit erreicht', `${a.titel}\n${kurz(a)}`, { url: BOARD_A });
       continue;
@@ -147,6 +151,10 @@ async function plattformB(browser) {
     stand.bekannt[id] = jetzt.toISOString();
     const r = pruefen(a, cfg);
     if (!r.ok) { log('B: passt nicht –', r.gruende.join('; ')); continue; }
+    if (r.nurMelden) {
+      await push('Werkbank: B – Auftrag passt, bitte selbst prüfen', `${text.slice(0, 300)}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url: BOARD_B, tags: 'eyes' });
+      continue;
+    }
     if (TESTMODUS) {
       await push('Werkbank (Test): B – würde Interesse bekunden', text.slice(0, 300), { url: BOARD_B, tags: 'eyes' });
       continue;

@@ -1,9 +1,16 @@
 name: werkbank
 
 on:
+  # Der Lauf fragt selbst im 5-Minuten-Takt ab und startet am Ende seinen Nachfolger.
+  # Der Zeitplan ist nur die Rückfallebene, falls die Kette einmal reißt
+  # (GitHub startet geplante Läufe unzuverlässig, gemessen alle 4 bis 9 Stunden).
   schedule:
-    - cron: '*/5 * * * *'   # GitHub startet oft mit einigen Minuten Verzögerung
-  workflow_dispatch: {}
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      laufzeit_min:
+        description: 'Laufzeit in Minuten'
+        default: '320'
 
 concurrency:
   group: werkbank
@@ -11,11 +18,12 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write   # nur für den Start des Nachfolgers
 
 jobs:
   lauf:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
 
@@ -57,6 +65,8 @@ jobs:
           ZIEL_B: ${{ secrets.ZIEL_B }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TESTMODUS: ${{ vars.TESTMODUS }}
+          LAUFZEIT_MIN: ${{ inputs.laufzeit_min || '320' }}
+          TAKT_S: '300'
         run: npm run waechter
 
       - name: Aufräumen
@@ -69,3 +79,10 @@ jobs:
         with:
           path: state
           key: stand-${{ github.run_id }}
+
+      # Nur nach einem sauberen Lauf, damit ein Fehler keine Endlosschleife auslöst.
+      - name: Nachfolger starten
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run waechter.yml --repo "$GITHUB_REPOSITORY" --ref main

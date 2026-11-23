@@ -13,13 +13,25 @@ const BOARD_A = `${ZIEL_A}/auftraege`;
 const BOARD_B = `${ZIEL_B}/orders`;
 const STAND = 'state/stand.json';
 
+// Dauerlauf: LAUFZEIT_MIN > 0 fragt im Abstand TAKT_S ab, bis die Laufzeit um ist. Ohne Angabe: eine Abfrage.
+const LAUFZEIT_MIN = Number(process.env.LAUFZEIT_MIN) || 0;
+const TAKT_S = Number(process.env.TAKT_S) || 300;
+
 const stand = existsSync(STAND) ? JSON.parse(readFileSync(STAND, 'utf8')) : { bekannt: {}, gebote: [] };
-const jetzt = new Date();
-const heuteISO = jetzt.toISOString().slice(0, 10);
-const geboteHeute = () => stand.gebote.filter((g) => g.zeit.startsWith(heuteISO)).length;
+stand.bekannt ??= {};
+stand.gebote ??= [];
+stand.meldungen ??= {};
+let jetzt = new Date();
+const geboteHeute = () => stand.gebote.filter((g) => g.zeit.startsWith(jetzt.toISOString().slice(0, 10))).length;
 const log = (...x) => console.log(new Date().toISOString(), ...x);
 
-async function push(titel, text, { url, prio = 'default', tags = '' } = {}) {
+// drossel_h: dieselbe Meldung (gleicher Titel) höchstens einmal in so vielen Stunden.
+async function push(titel, text, { url, prio = 'default', tags = '', drossel_h = 0 } = {}) {
+  if (drossel_h) {
+    const zuletzt = Date.parse(stand.meldungen[titel] || 0);
+    if (Date.now() - zuletzt < drossel_h * 3600000) return log('PUSH gedrosselt', titel);
+    stand.meldungen[titel] = new Date().toISOString();
+  }
   log('PUSH', titel, '|', text.replace(/\n/g, ' / '));
   if (!NTFY) return;
   const headers = { Title: encodeURIComponent(titel), Priority: prio, Tags: tags, 'Content-Type': 'text/plain; charset=utf-8' };
@@ -57,7 +69,7 @@ async function plattformA(browser) {
   await page.goto(BOARD_A, { waitUntil: 'networkidle' });
 
   if (!(await page.getByRole('button', { name: /Konto, angemeldet/ }).count())) {
-    await push('Werkbank: Anmeldung A abgelaufen', 'Bitte neu anmelden und das Secret A_AUTH erneuern.', { prio: 'high', tags: 'warning' });
+    await push('Werkbank: Anmeldung A abgelaufen', 'Bitte neu anmelden und das Secret A_AUTH erneuern.', { prio: 'high', tags: 'warning', drossel_h: 6 });
     return ctx.close();
   }
 
@@ -163,16 +175,30 @@ async function plattformB(browser) {
     stand.gebote.push({ id, plattform: 'b', titel: a.titel, betrag: null, zeit: jetzt.toISOString() });
     await push('Werkbank: Interesse bei B bekundet', `${text.slice(0, 300)}\nVerlosung in ca. 10 Min.`, { url: BOARD_B, tags: 'game_die' });
   }
-  if (n === 0) await push('Werkbank: B hat Aufträge – Knopf nicht erkannt', `${zaehler}. Bitte selbst ansehen.`, { url: BOARD_B });
+  if (n === 0) await push('Werkbank: B hat Aufträge – Knopf nicht erkannt', `${zaehler}. Bitte selbst ansehen.`, { url: BOARD_B, drossel_h: 2 });
   await ctx.close();
 }
 
 // ---------------------------------------------------------------- Lauf
-const browser = await chromium.launch();
-try {
-  await plattformA(browser).catch(async (e) => { log('A-Fehler', e); await push('Werkbank: Fehler A', String(e.message).slice(0, 300), { tags: 'x' }); });
-  await plattformB(browser).catch(async (e) => { log('B-Fehler', e); await push('Werkbank: Fehler B', String(e.message).slice(0, 300), { tags: 'x' }); });
-} finally {
-  await browser.close();
-  speichern();
+async function abfrage() {
+  jetzt = new Date();
+  const browser = await chromium.launch();
+  try {
+    await plattformA(browser).catch(async (e) => { log('A-Fehler', e); await push('Werkbank: Fehler A', String(e.message).slice(0, 300), { tags: 'x', drossel_h: 2 }); });
+    await plattformB(browser).catch(async (e) => { log('B-Fehler', e); await push('Werkbank: Fehler B', String(e.message).slice(0, 300), { tags: 'x', drossel_h: 2 }); });
+  } finally {
+    await browser.close().catch(() => {});
+    speichern();
+  }
 }
+
+const start = Date.now();
+const ende = start + LAUFZEIT_MIN * 60000;
+for (let nr = 1; ; nr++) {
+  const naechste = start + nr * TAKT_S * 1000;
+  log(`Abfrage ${nr}${LAUFZEIT_MIN ? ` (Dauerlauf ${LAUFZEIT_MIN} Min., Takt ${TAKT_S} s)` : ''}`);
+  await abfrage().catch((e) => log('Abfrage-Fehler', e));
+  if (naechste > ende) break;
+  await new Promise((r) => setTimeout(r, Math.max(0, naechste - Date.now())));
+}
+log('Ende des Laufs');

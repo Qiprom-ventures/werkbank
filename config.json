@@ -1,5 +1,6 @@
 {
-  "testmodus": true,
+  "testmodus": false,
+  "plattform_b_live": false,
   "drucker": {
     "name": "Bambu Lab X2D",
     "bauraum_mm": [256, 256, 260],

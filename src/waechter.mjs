@@ -32,7 +32,7 @@ async function push(titel, text, { url, prio = 'default', tags = '', drossel_h =
     if (Date.now() - zuletzt < drossel_h * 3600000) return log('PUSH gedrosselt', titel);
     stand.meldungen[titel] = new Date().toISOString();
   }
-  log('PUSH', titel, '|', text.replace(/\n/g, ' / '));
+  log('PUSH', titel); // Protokoll ist öffentlich lesbar: kein Auftragstext
   if (!NTFY) return;
   const headers = { Title: encodeURIComponent(titel), Priority: prio, Tags: tags, 'Content-Type': 'text/plain; charset=utf-8' };
   if (url) headers.Click = url;
@@ -85,13 +85,19 @@ async function plattformA(browser) {
     stand.bekannt[id] = jetzt.toISOString();
 
     const r = pruefen(a, cfg);
-    if (!r.ok) { log('A: passt nicht –', a.titel, '–', r.gruende.join('; ')); continue; }
+    if (!r.ok) { log('A: passt nicht –', r.gruende.join('; ')); continue; }
     if (r.nurMelden) {
       await push('Werkbank: Auftrag passt – bitte selbst prüfen', `${a.titel}\n${kurz(a)}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url: BOARD_A, tags: 'eyes' });
       continue;
     }
     if (geboteHeute() >= cfg.regeln.max_gebote_pro_tag) {
       await push('Werkbank: Auftrag passt – Tageslimit erreicht', `${a.titel}\n${kurz(a)}`, { url: BOARD_A });
+      continue;
+    }
+
+    // Ohne gelesenes Gewicht und gelesene Druckzeit wäre der Preis geraten: dann nur melden.
+    if (a.gewicht_g == null || a.druckzeit_h == null) {
+      await push('Werkbank: Auftrag passt – Daten unvollständig, bitte selbst bieten', kurz(a), { url: BOARD_A, prio: 'high', tags: 'eyes' });
       continue;
     }
 
@@ -171,11 +177,22 @@ async function plattformB(browser) {
       await push('Werkbank (Test): B – würde Interesse bekunden', text.slice(0, 300), { url: BOARD_B, tags: 'eyes' });
       continue;
     }
+    if (!cfg.plattform_b_live) { // B ist noch nicht freigegeben: nur melden, das Fenster ist kurz
+      await push('Werkbank: B – Auftrag passt, Interesse bitte selbst melden', text.slice(0, 300), { url: BOARD_B, prio: 'high', tags: 'zap' });
+      continue;
+    }
     await knoepfe.nth(i).click();
     stand.gebote.push({ id, plattform: 'b', titel: a.titel, betrag: null, zeit: jetzt.toISOString() });
     await push('Werkbank: Interesse bei B bekundet', `${text.slice(0, 300)}\nVerlosung in ca. 10 Min.`, { url: BOARD_B, tags: 'game_die' });
   }
-  if (n === 0) await push('Werkbank: B hat Aufträge – Knopf nicht erkannt', `${zaehler}. Bitte selbst ansehen.`, { url: BOARD_B, drossel_h: 2 });
+  if (n === 0) {
+    // Beschriftungen der Knöpfe mitschicken, damit B angeschlossen werden kann (ohne Namen der Seite).
+    const stamm = new URL(ZIEL_B).hostname.split('.')[0].toLowerCase();
+    const alle = await page.getByRole('button').allInnerTexts().catch(() => []);
+    const knopfTexte = [...new Set(alle.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stamm)))].slice(0, 15);
+    log('B: Knöpfe auf der Seite:', knopfTexte.join(' | ') || '(keine)');
+    await push('Werkbank: B hat Aufträge – Knopf nicht erkannt', `${zaehler}. Bitte selbst ansehen.\nKnöpfe: ${knopfTexte.join(' | ') || '(keine)'}`, { url: BOARD_B, prio: 'high', drossel_h: 2 });
+  }
   await ctx.close();
 }
 
@@ -192,6 +209,7 @@ async function abfrage() {
   }
 }
 
+log(`Modus: ${TESTMODUS ? 'Test (meldet nur)' : `live – A bietet, B ${cfg.plattform_b_live ? 'meldet Interesse' : 'meldet nur'}`}, höchstens ${cfg.regeln.max_gebote_pro_tag} Gebot(e) pro Tag`);
 const start = Date.now();
 const ende = start + LAUFZEIT_MIN * 60000;
 for (let nr = 1; ; nr++) {

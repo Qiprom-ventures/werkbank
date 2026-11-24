@@ -192,3 +192,32 @@ test('Plattform B: TPU, PLA, PETG frei, Sondermaterial und Express raus', () => 
   const gross = parseDetailB(DETAIL_B('PETG', 'PLA').replace(/63 × 28 × 130 mm/g, '300 × 28 × 130 mm'));
   assert.equal(pruefenB(gross, cfg).ok, false);
 });
+
+// Karte ohne geslictes Modell (24.11.2026), Titel erfunden
+test('Karte ohne Gewicht und Druckzeit wird gelesen, Entfernung erkannt', () => {
+  const a = parseKarte(`Foto 1
+Material
+PETG, Farbe egal
+Menge und Maße
+1 Stück
+Entfernung
+etwa 337 km entfernt
+Frist
+ohne feste Frist
+
+Abholung, Postleitzahlgebiet 65.
+
+Du nennst den Preis
+
+8,00 € zahlt der Kunde höchstens, mit Versand und Gebühren
+
+Preis nennen`);
+  assert.equal(a.titel, 'Foto 1');
+  assert.equal(a.material, 'PETG');
+  assert.equal(a.gewicht_g, null);
+  assert.equal(a.druckzeit_h, null);
+  assert.equal(a.entfernung_km, 337);
+  assert.equal(a.versand, false);
+  assert.equal(a.schonGeboten, false);
+  assert.equal(pruefen(a, cfg).ok, true);
+});

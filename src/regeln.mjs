@@ -22,6 +22,7 @@ export function parseKarte(text) {
     stueck: masse ? Number(masse[1]) : 1,
     masse_mm: masse ? [zahl(masse[2]), zahl(masse[3]), zahl(masse[4])] : null,
     frist: nach('Frist'),
+    entfernung_km: zahl(t.match(/etwa\s+([\d.]+)\s*km\s+entfernt/)?.[1]),
     versand: !/^Abholung/m.test(t),
     richtpreis_eur: zahl(t.match(/([\d.,]+)\s*€\s*erhältst du zum Richtpreis/)?.[1]),
     kunde_max_brutto_eur: zahl(t.match(/([\d.,]+)\s*€\s*zahlt der Kunde höchstens/)?.[1]),

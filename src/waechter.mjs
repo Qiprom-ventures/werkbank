@@ -58,7 +58,8 @@ function kurz(a) {
   ].filter(Boolean).join(' · ');
 }
 
-const karteVon = (knopf) => knopf.locator('xpath=ancestor::*[.//*[normalize-space()="Gewicht"]][1]');
+// Jede Karte ist ein Listeneintrag. (Früher: nächster Vorfahr mit „Gewicht“ – das griff bei Karten ohne Gewicht die ganze Liste.)
+const karteVon = (knopf) => knopf.locator('xpath=ancestor::li[1]');
 
 // ---------------------------------------------------------------- Plattform A
 async function plattformA(browser) {
@@ -96,8 +97,11 @@ async function plattformA(browser) {
     }
 
     // Ohne gelesenes Gewicht und gelesene Druckzeit wäre der Preis geraten: dann nur melden.
-    if (a.gewicht_g == null || a.druckzeit_h == null) {
-      await push('Werkbank: Auftrag passt – Daten unvollständig, bitte selbst bieten', kurz(a), { url: BOARD_A, prio: 'high', tags: 'eyes' });
+    const weit = !a.versand && a.entfernung_km != null && a.entfernung_km > (cfg.regeln.max_abholung_km ?? 50);
+    if (a.gewicht_g == null || a.druckzeit_h == null || weit) {
+      const grund = weit ? `Abholung in ${a.entfernung_km} km` : 'ohne Gewicht/Druckzeit (kein geslictes Modell)';
+      log('A: passt, aber nur Meldung –', grund);
+      await push('Werkbank: A – Auftrag bitte selbst ansehen', `${a.titel}\n${kurz(a)}\n${grund}`, { url: BOARD_A, prio: 'high', tags: 'eyes' });
       continue;
     }
 

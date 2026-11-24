@@ -12,6 +12,7 @@
   "regeln": {
     "max_druckzeit_h": 12,
     "min_frist_tage": 3,
+    "max_abholung_km": 50,
     "max_gebote_pro_tag": 1
   },
   "preis": {

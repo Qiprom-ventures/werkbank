@@ -247,10 +247,22 @@ async function plattformB(browser) {
         await push('Werkbank: B – Auftrag passt, Tageslimit erreicht', info, { url, prio: 'high' });
         continue;
       }
-      await detail.getByRole('button', { name: 'Interesse bekunden' }).click();
-      await detail.waitForTimeout(3000);
+      const knopfB = detail.getByRole('button', { name: 'Interesse bekunden' });
+      await knopfB.click();
+      // Falls die Seite nachfragt: bestätigen. Dann bis zu 10 s warten, ob der Knopf verschwindet.
+      await detail.waitForTimeout(1200);
+      const stammB = new URL(ZIEL_B).hostname.split('.')[0].toLowerCase();
+      const sauber = (liste) => [...new Set(liste.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stammB)))].slice(0, 12);
+      const dlg = detail.getByRole('dialog');
+      if (await dlg.count()) {
+        log('B: Rückfrage der Seite, Knöpfe:', sauber(await dlg.first().getByRole('button').allInnerTexts().catch(() => [])).join(' | ') || '(keine)');
+        await dlg.first().getByRole('button', { name: /interesse|bestätigen|^ja/i }).first().click({ timeout: 5000 }).catch((e) => log('B: Bestätigen nicht gefunden –', String(e.message).slice(0, 80)));
+      }
+      await knopfB.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
       const nachher = await detail.locator('main').innerText().catch(() => '');
-      if (/Interesse bekunden/.test(nachher) && !/zurückziehen|bekundet|vorgemerkt/i.test(nachher)) {
+      const zustand = (nachher.match(/Interesse (bekundet|zurückziehen|angemeldet|vorgemerkt)[^\n]{0,30}|Du bist dabei[^\n]{0,30}|Vergabe in \d\d:\d\d/gi) || []).slice(0, 4).join(' / ');
+      log(`B: ${a.nummer ?? id} nach dem Klick – Knöpfe:`, sauber(await detail.locator('main').getByRole('button').allInnerTexts().catch(() => [])).join(' | ') || '(keine)', '– Zustand:', zustand || '(nichts erkannt)');
+      if ((await knopfB.count()) && !/zurückziehen|bekundet|vorgemerkt|angemeldet|du bist dabei/i.test(nachher)) {
         log(`B: ${a.nummer ?? id} Klick ohne sichtbare Wirkung`);
         await push('Werkbank: B – Interesse evtl. nicht angekommen', info, { url, prio: 'high', tags: 'warning' });
         continue;

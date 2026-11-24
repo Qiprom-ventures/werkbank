@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 345
     steps:
+      # Immer den neuesten Stand holen: Ein wartender Lauf aus dem Zeitplan trüge sonst den Stand von seinem Auslösezeitpunkt.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:

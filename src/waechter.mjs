@@ -2,7 +2,7 @@
 // gegen die Regeln und bietet (Testmodus: meldet nur). Adressen kommen aus Umgebungsvariablen.
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { parseKarte, pruefen, gebot, lieferzeit, auftragsId } from './regeln.mjs';
+import { parseKarte, pruefen, gebot, lieferzeit, auftragsId, parseDetailB, pruefenB } from './regeln.mjs';
 
 const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
 const TESTMODUS = process.env.TESTMODUS ? process.env.TESTMODUS !== 'false' : cfg.testmodus;
@@ -157,41 +157,62 @@ async function plattformB(browser) {
   log('B:', zaehler);
   if (/^0 /.test(zaehler)) return ctx.close();
 
-  const knoepfe = page.getByRole('button', { name: /Interesse/i });
-  const n = await knoepfe.count();
-  for (let i = 0; i < n; i++) {
-    const karte = knoepfe.nth(i).locator('xpath=ancestor::*[self::article or self::li or contains(@class,"card")][1]');
-    const text = (await karte.innerText().catch(() => '')) || '';
-    const material = (text.match(/\b(PA6-CF|PA612-CF|PLA|PETG|ABS|ASA|TPU|PA|PC)\b/) || [])[1] || null;
-    const a = { titel: text.split('\n')[0] || 'Auftrag B', material, materialZeile: material, frist: null, masse_mm: null, druckzeit_h: null, gewicht_g: text.length };
-    const id = auftragsId('b', a);
+  // Auf dem Board gibt es keinen Knopf: Jede Karte ist ein Verweis auf die Detailseite, dort steht „Interesse bekunden“.
+  const hrefs = await page.locator('main a[href*="/orders/"]').evaluateAll((els) => [...new Set(els.map((x) => x.getAttribute('href')))]);
+  if (!hrefs.length) {
+    await push('Werkbank: B hat Aufträge – Karte nicht erkannt', `${zaehler}. Bitte selbst ansehen.`, { url: BOARD_B, prio: 'high', drossel_h: 2 });
+    return ctx.close();
+  }
+  const interesseHeute = () => stand.gebote.filter((g) => g.plattform === 'b' && g.zeit.startsWith(jetzt.toISOString().slice(0, 10))).length;
+
+  for (const href of hrefs) {
+    const id = `b-${href.split('/').pop()}`;
     if (stand.bekannt[id]) continue;
     stand.bekannt[id] = jetzt.toISOString();
-    const r = pruefen(a, cfg);
-    if (!r.ok) { log('B: passt nicht –', r.gruende.join('; ')); continue; }
-    if (r.nurMelden) {
-      await push('Werkbank: B – Auftrag passt, bitte selbst prüfen', `${text.slice(0, 300)}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url: BOARD_B, tags: 'eyes' });
-      continue;
+    const url = new URL(href, ZIEL_B).href;
+    const detail = await ctx.newPage();
+    try {
+      await detail.goto(url, { waitUntil: 'networkidle' });
+      const a = parseDetailB(await detail.locator('main').innerText());
+      const r = pruefenB(a, cfg);
+      const info = `${a.titel}\n${a.materialien.join('+')} · ${a.teile_mm.length} Teil(e) ×${a.menge} · ${a.volumen_cm3.toFixed(1)} cm³ · ${a.versand ? 'Versand' : 'Abholung'}\nVergütung ${a.herstell_eur ?? '?'} € (Selbstkosten ca. ${r.kosten_eur} €), du erhältst ${a.erhaelt_eur ?? '?'} €`;
+      if (!r.ok) { log(`B: ${a.nummer ?? id} passt nicht –`, r.gruende.join('; ')); continue; }
+      if (!a.hatKnopf) { log(`B: ${a.nummer ?? id} passt, aber kein Knopf (schon gemeldet oder vergeben)`); continue; }
+      if (r.nurMelden) {
+        log(`B: ${a.nummer ?? id} passt, Material nur mit Meldung`);
+        await push('Werkbank: B – Auftrag passt, bitte selbst prüfen', `${info}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url, prio: 'high', tags: 'eyes' });
+        continue;
+      }
+      if (TESTMODUS) {
+        await push('Werkbank (Test): B – würde Interesse bekunden', info, { url, tags: 'eyes' });
+        continue;
+      }
+      if (!cfg.plattform_b_live) { // B ist noch nicht freigegeben: nur melden, das Fenster ist kurz
+        log(`B: ${a.nummer ?? id} passt, B meldet nur`);
+        await push('Werkbank: B – Auftrag passt, Interesse bitte selbst melden', info, { url, prio: 'high', tags: 'zap' });
+        continue;
+      }
+      if (interesseHeute() >= (cfg.plattform_b?.max_interesse_pro_tag ?? 1)) {
+        await push('Werkbank: B – Auftrag passt, Tageslimit erreicht', info, { url, prio: 'high' });
+        continue;
+      }
+      await detail.getByRole('button', { name: 'Interesse bekunden' }).click();
+      await detail.waitForTimeout(3000);
+      const nachher = await detail.locator('main').innerText().catch(() => '');
+      if (/Interesse bekunden/.test(nachher) && !/zurückziehen|bekundet|vorgemerkt/i.test(nachher)) {
+        log(`B: ${a.nummer ?? id} Klick ohne sichtbare Wirkung`);
+        await push('Werkbank: B – Interesse evtl. nicht angekommen', info, { url, prio: 'high', tags: 'warning' });
+        continue;
+      }
+      stand.gebote.push({ id, plattform: 'b', titel: a.nummer ?? a.titel, betrag: a.herstell_eur, zeit: jetzt.toISOString() });
+      log(`B: ${a.nummer ?? id} Interesse bekundet`);
+      await push('Werkbank: Interesse bei B bekundet', `${info}\nDie Vergabe erfolgt per Los.`, { url, tags: 'game_die' });
+    } catch (e) {
+      log('B: Fehler bei einem Auftrag –', String(e.message).slice(0, 120));
+      await push('Werkbank: B – Auftrag konnte nicht gelesen werden', 'Bitte selbst ansehen.', { url: BOARD_B, prio: 'high', drossel_h: 1 });
+    } finally {
+      await detail.close().catch(() => {});
     }
-    if (TESTMODUS) {
-      await push('Werkbank (Test): B – würde Interesse bekunden', text.slice(0, 300), { url: BOARD_B, tags: 'eyes' });
-      continue;
-    }
-    if (!cfg.plattform_b_live) { // B ist noch nicht freigegeben: nur melden, das Fenster ist kurz
-      await push('Werkbank: B – Auftrag passt, Interesse bitte selbst melden', text.slice(0, 300), { url: BOARD_B, prio: 'high', tags: 'zap' });
-      continue;
-    }
-    await knoepfe.nth(i).click();
-    stand.gebote.push({ id, plattform: 'b', titel: a.titel, betrag: null, zeit: jetzt.toISOString() });
-    await push('Werkbank: Interesse bei B bekundet', `${text.slice(0, 300)}\nVerlosung in ca. 10 Min.`, { url: BOARD_B, tags: 'game_die' });
-  }
-  if (n === 0) {
-    // Beschriftungen der Knöpfe mitschicken, damit B angeschlossen werden kann (ohne Namen der Seite).
-    const stamm = new URL(ZIEL_B).hostname.split('.')[0].toLowerCase();
-    const alle = await page.getByRole('button').allInnerTexts().catch(() => []);
-    const knopfTexte = [...new Set(alle.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stamm)))].slice(0, 15);
-    log('B: Knöpfe auf der Seite:', knopfTexte.join(' | ') || '(keine)');
-    await push('Werkbank: B hat Aufträge – Knopf nicht erkannt', `${zaehler}. Bitte selbst ansehen.\nKnöpfe: ${knopfTexte.join(' | ') || '(keine)'}`, { url: BOARD_B, prio: 'high', drossel_h: 2 });
   }
   await ctx.close();
 }

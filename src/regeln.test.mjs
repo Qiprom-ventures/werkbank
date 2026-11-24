@@ -102,3 +102,87 @@ test('ABS wird geboten, TPU nur gemeldet, ASA und Faser bleiben gesperrt', () =>
   assert.equal(pruefen({ ...a, material: 'ABS-GF' }, cfg).ok, false);
   assert.equal(pruefen({ ...a, material: 'PA6-CF' }, cfg).ok, false);
 });
+
+// Nachgebildet nach der Detailseite von Plattform B (24.11.2026), Titel und Nummer erfunden
+import { parseDetailB, pruefenB } from './regeln.mjs';
+const DETAIL_B = (material2 = 'PETG', material1 = 'TPU') => `XY-1234 · abcd1234
+Beispielteil (+2 Teile)
+Erstellt: vor 12 Min
+Größtes Teil (Teil 3 von 3): 63 × 28 × 130 mm
+TEIL 1 VON 3
+STL herunterladen
+ABMESSUNGEN
+23.5 × 23.5 × 9 mm
+L × B × H
+GEWICHT
+~87.4 g
+bei ${material1} 100%
+VOLUMEN
+~1.6 cm³
+TEIL 2 VON 3· teil2.stl
+STL
+ABMESSUNGEN
+28 × 28 × 9 mm
+VOLUMEN
+~1.7 cm³
+Material
+${material1}
+Menge
+3
+TEIL 3 VON 3· teil3.stl
+ABMESSUNGEN
+63 × 28 × 130 mm
+VOLUMEN
+~19.8 cm³
+Material
+${material2}
+Menge
+3
+DRUCKPARAMETER
+Material
+${material1}
+Menge
+3
+LIEFERUNG
+📦 Versand
+Päckchen S (9.19 €)
+Express
+Nein
+DEINE VERGÜTUNG
+Herstellkosten inkl. Marge
+15.47 €
+Versandkosten
+9.19 €
+Du erhältst
+24.66 €
+Vergabe in 07:53
+Interesse bekunden
+Nicht interessiert`;
+
+test('Plattform B: Detailseite wird gelesen', () => {
+  const a = parseDetailB(DETAIL_B());
+  assert.equal(a.nummer, 'XY-1234');
+  assert.equal(a.titel, 'Beispielteil (+2 Teile)');
+  assert.deepEqual(a.materialien, ['TPU', 'PETG']);
+  assert.equal(a.menge, 3);
+  assert.equal(a.herstell_eur, 15.47);
+  assert.equal(a.erhaelt_eur, 24.66);
+  assert.equal(a.express, false);
+  assert.equal(a.hatKnopf, true);
+  assert.ok(Math.abs(a.volumen_cm3 - 23.1) < 0.01);
+  assert.ok(a.teile_mm.some((t) => t[0] === 23.5 && t[2] === 9));
+});
+
+test('Plattform B: TPU nur mit Meldung, PLA/PETG frei, Sondermaterial und Express raus', () => {
+  const tpu = pruefenB(parseDetailB(DETAIL_B()), cfg);
+  assert.equal(tpu.ok, true);
+  assert.equal(tpu.nurMelden, true);
+  const frei = pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA')), cfg);
+  assert.equal(frei.ok, true);
+  assert.equal(frei.nurMelden, false);
+  assert.ok(frei.kosten_eur < 15.47);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('PA6-CF', 'PLA')), cfg).ok, false);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA').replace('Express\nNein', 'Express\nJa')), cfg).ok, false);
+  const gross = parseDetailB(DETAIL_B('PETG', 'PLA').replace(/63 × 28 × 130 mm/g, '300 × 28 × 130 mm'));
+  assert.equal(pruefenB(gross, cfg).ok, false);
+});

@@ -108,3 +108,48 @@ export function auftragsId(plattform, a) {
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return `${plattform}-${h.toString(36)}`;
 }
+
+// ---------------------------------------------------------------- Plattform B (Detailseite)
+const dez = (x) => Number(String(x).replace(',', '.'));
+
+/** Liest den Text einer Auftrags-Detailseite (Plattform B) in ein Objekt. */
+export function parseDetailB(text) {
+  const t = text.replace(/\u00a0/g, ' ');
+  const zeilen = t.split('\n').map((z) => z.trim()).filter(Boolean);
+  const alle = (label) => zeilen.flatMap((z, i) => (z === label && zeilen[i + 1] ? [zeilen[i + 1]] : []));
+  const euro = (label) => { const v = alle(label)[0]; const m = v && v.match(/([\d.,]+)\s*€/); return m ? dez(m[1]) : null; };
+  const teile = [...t.matchAll(/([\d.,]+)\s*×\s*([\d.,]+)\s*×\s*([\d.,]+)\s*mm/gi)].map((m) => [dez(m[1]), dez(m[2]), dez(m[3])]);
+  const mengen = alle('Menge').map(Number).filter((n) => n > 0);
+  return {
+    nummer: (t.match(/\b[A-Z]{2}-\d{3,}\b/) || [])[0] || null,
+    titel: zeilen[1] || zeilen[0] || '(ohne Titel)',
+    materialien: [...new Set(alle('Material').map((m) => m.toUpperCase()))],
+    teile_mm: teile,
+    menge: mengen.length ? Math.max(...mengen) : 1,
+    volumen_cm3: [...t.matchAll(/~?\s*([\d.,]+)\s*cm³/gi)].reduce((sum, m) => sum + dez(m[1]), 0),
+    herstell_eur: euro('Herstellkosten inkl. Marge'),
+    erhaelt_eur: euro('Du erhältst'),
+    express: /^ja/i.test(alle('Express')[0] || ''),
+    versand: /Versand/.test(t),
+    hatKnopf: /Interesse bekunden/.test(t),
+  };
+}
+
+/** Prüft einen Auftrag von Plattform B. Ergebnis: { ok, gruende[], nurMelden, kosten_eur } */
+export function pruefenB(a, cfg) {
+  const gr = [];
+  const b = cfg.plattform_b ?? {};
+  if (!a.materialien.length) gr.push('Material nicht lesbar');
+  for (const m of a.materialien) if (!materialFreigegeben(m, cfg.drucker.materialien)) gr.push(`Material ${m} nicht freigegeben`);
+  if (!a.teile_mm.length) gr.push('Maße nicht lesbar');
+  if (a.teile_mm.some((mm) => !passtInBauraum(mm, cfg.drucker.bauraum_mm))) gr.push('passt nicht in den Bauraum');
+  if (a.express) gr.push('Express');
+  if (a.herstell_eur == null) gr.push('Vergütung nicht lesbar');
+  else if (b.max_wert_eur != null && a.herstell_eur > b.max_wert_eur) gr.push(`Wert ${a.herstell_eur} € über ${b.max_wert_eur} €`);
+  // Selbstkosten grob aus dem Volumen (das Gewicht der Seite ist unzuverlässig)
+  const eurG = Math.max(0, ...a.materialien.map((m) => cfg.preis.material_eur_pro_g[materialKlasse(m)] ?? cfg.preis.material_eur_pro_g.standard));
+  const kosten = a.volumen_cm3 * a.menge * (b.dichte_g_cm3 ?? 1.3) * eurG + (a.versand ? cfg.preis.verpackung_eur_versand : 0);
+  if (a.herstell_eur != null && a.herstell_eur < kosten) gr.push(`Vergütung ${a.herstell_eur} € unter Selbstkosten ${kosten.toFixed(2)} €`);
+  const nurMelden = a.materialien.some((m) => materialFreigegeben(m, cfg.drucker.nur_melden ?? []));
+  return { ok: gr.length === 0, gruende: gr, nurMelden, kosten_eur: Math.round(kosten * 100) / 100 };
+}

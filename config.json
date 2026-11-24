@@ -5,7 +5,7 @@
   "drucker": {
     "name": "Bambu Lab X2D",
     "bauraum_mm": [256, 256, 260],
-    "materialien": ["PLA", "PETG", "ABS", "TPU"],
+    "materialien": ["PLA", "PETG", "ABS", "ASA", "TPU"],
     "nur_melden": [],
     "nur_melden_hinweis": "Vorrätig ist ein hartes TPU (Shore 68D). Härtewunsch des Kunden prüfen, dann selbst bieten."
   },

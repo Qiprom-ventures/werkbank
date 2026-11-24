@@ -89,7 +89,7 @@ test('Materialfreigabe: Faser nur mit eigenem Eintrag, Varianten der Grundsorte 
 // Seit 24.11.2026 ist TPU freigegeben; der Schalter „nur melden“ bleibt als Mechanik erhalten.
 const cfgMelden = { ...cfg, drucker: { ...cfg.drucker, nur_melden: ['TPU'] } };
 
-test('ABS und TPU werden geboten, ASA und Faser bleiben gesperrt; „nur melden“ wirkt, wenn gesetzt', () => {
+test('ABS, ASA und TPU werden geboten, Faser und PC bleiben gesperrt; „nur melden“ wirkt, wenn gesetzt', () => {
   const a = parseKarte(karte);
   const abs = pruefen({ ...a, material: 'ABS' }, cfg);
   assert.equal(abs.ok, true, abs.gruende.join(', '));
@@ -103,7 +103,9 @@ test('ABS und TPU werden geboten, ASA und Faser bleiben gesperrt; „nur melden�
     assert.equal(lieferzeit({ ...a, material: m }, cfg), 6);
   }
   assert.equal(pruefen(a, cfg).nurMelden, false);
-  assert.equal(pruefen({ ...a, material: 'ASA' }, cfg).ok, false);
+  assert.equal(pruefen({ ...a, material: 'ASA' }, cfg).ok, true); // seit 24.11.2026 freigegeben
+  assert.equal(lieferzeit({ ...a, material: 'ASA' }, cfg), 6);
+  assert.equal(pruefen({ ...a, material: 'PC' }, cfg).ok, false);
   assert.equal(pruefen({ ...a, material: 'ABS-GF' }, cfg).ok, false);
   assert.equal(pruefen({ ...a, material: 'PA6-CF' }, cfg).ok, false);
 });
@@ -252,6 +254,6 @@ Auftrag annehmen`;
   assert.equal(a.entfernung_km, 316);
   assert.equal(a.versand, true);
   assert.deepEqual(a.masse_mm, [80, 80, 160]);
-  assert.equal(pruefen(a, cfg).ok, false); // ASA ist nicht freigegeben
-  assert.equal(pruefen(parseKarte(text.replace('ASA', 'PETG')), cfg).ok, true);
+  assert.equal(pruefen(a, cfg).ok, true); // ASA ist seit 24.11.2026 freigegeben
+  assert.equal(pruefen(parseKarte(text.replace('ASA', 'PA-CF')), cfg).ok, false);
 });

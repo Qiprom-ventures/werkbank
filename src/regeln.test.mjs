@@ -86,7 +86,10 @@ test('Materialfreigabe: Faser nur mit eigenem Eintrag, Varianten der Grundsorte 
   assert.equal(materialFreigegeben('PA6-CF', ['PLA', 'PA6-CF']), true);
 });
 
-test('ABS wird geboten, TPU nur gemeldet, ASA und Faser bleiben gesperrt', () => {
+// Seit 24.11.2026 ist TPU freigegeben; der Schalter „nur melden“ bleibt als Mechanik erhalten.
+const cfgMelden = { ...cfg, drucker: { ...cfg.drucker, nur_melden: ['TPU'] } };
+
+test('ABS und TPU werden geboten, ASA und Faser bleiben gesperrt; „nur melden“ wirkt, wenn gesetzt', () => {
   const a = parseKarte(karte);
   const abs = pruefen({ ...a, material: 'ABS' }, cfg);
   assert.equal(abs.ok, true, abs.gruende.join(', '));
@@ -95,7 +98,9 @@ test('ABS wird geboten, TPU nur gemeldet, ASA und Faser bleiben gesperrt', () =>
   for (const m of ['TPU', 'TPU 95A']) {
     const tpu = pruefen({ ...a, material: m }, cfg);
     assert.equal(tpu.ok, true, tpu.gruende.join(', '));
-    assert.equal(tpu.nurMelden, true);
+    assert.equal(tpu.nurMelden, false);
+    assert.equal(pruefen({ ...a, material: m }, cfgMelden).nurMelden, true);
+    assert.equal(lieferzeit({ ...a, material: m }, cfg), 6);
   }
   assert.equal(pruefen(a, cfg).nurMelden, false);
   assert.equal(pruefen({ ...a, material: 'ASA' }, cfg).ok, false);
@@ -173,10 +178,11 @@ test('Plattform B: Detailseite wird gelesen', () => {
   assert.ok(a.teile_mm.some((t) => t[0] === 23.5 && t[2] === 9));
 });
 
-test('Plattform B: TPU nur mit Meldung, PLA/PETG frei, Sondermaterial und Express raus', () => {
+test('Plattform B: TPU, PLA, PETG frei, Sondermaterial und Express raus', () => {
   const tpu = pruefenB(parseDetailB(DETAIL_B()), cfg);
   assert.equal(tpu.ok, true);
-  assert.equal(tpu.nurMelden, true);
+  assert.equal(tpu.nurMelden, false);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B()), cfgMelden).nurMelden, true);
   const frei = pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA')), cfg);
   assert.equal(frei.ok, true);
   assert.equal(frei.nurMelden, false);

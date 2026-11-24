@@ -1,12 +1,12 @@
 {
   "testmodus": false,
-  "plattform_b_live": false,
+  "plattform_b_live": true,
   "plattform_b": { "max_wert_eur": 100, "max_interesse_pro_tag": 1, "dichte_g_cm3": 1.3 },
   "drucker": {
     "name": "Bambu Lab X2D",
     "bauraum_mm": [256, 256, 260],
     "materialien": ["PLA", "PETG", "ABS", "TPU"],
-    "nur_melden": ["TPU"],
+    "nur_melden": [],
     "nur_melden_hinweis": "Vorrätig ist ein hartes TPU (Shore 68D). Härtewunsch des Kunden prüfen, dann selbst bieten."
   },
   "regeln": {

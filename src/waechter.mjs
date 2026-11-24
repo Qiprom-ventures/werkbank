@@ -9,7 +9,8 @@ const TESTMODUS = process.env.TESTMODUS ? process.env.TESTMODUS !== 'false' : cf
 const NTFY = process.env.NTFY_TOPIC;
 const ZIEL_A = (process.env.ZIEL_A || '').replace(/\/$/, ''); // Plattform A (Preis nennen)
 const ZIEL_B = (process.env.ZIEL_B || '').replace(/\/$/, ''); // Plattform B (Interesse, Losverfahren)
-const BOARD_A = `${ZIEL_A}/auftraege`;
+// Der Umkreis steht sonst in einem Cookie der Sitzung; hier fest, damit der Lauf dasselbe sieht wie der Mensch.
+const BOARD_A = `${ZIEL_A}/auftraege?umkreis=${cfg.regeln.umkreis_km ?? 500}`;
 const BOARD_B = `${ZIEL_B}/orders`;
 const STAND = 'state/stand.json';
 

@@ -221,3 +221,37 @@ Preis nennen`);
   assert.equal(a.schonGeboten, false);
   assert.equal(pruefen(a, cfg).ok, true);
 });
+
+// Richtpreis-Karte mit Schätzwerten statt Slicer-Werten (24.11.2026), Titel erfunden
+test('Richtpreis-Karte mit geschätztem Gewicht und geschätzter Druckzeit', () => {
+  const text = `Gehäuse 160
+Gewicht
+etwa 126 g
+Material
+ASA, Farbe egal
+Menge und Maße
+1 Stück, 80 × 80 × 160 mm
+Entfernung
+etwa 316 km entfernt
+Frist
+ohne feste Frist
+
+Versand, Postleitzahlgebiet 80, etwa 5,5 h Druckzeit.
+
+13,63 €
+
+erhältst du
+
+Versandlabel kommt von uns
+
+Auftrag annehmen`;
+  const a = parseKarte(text);
+  assert.equal(a.gewicht_g, 126);
+  assert.equal(a.druckzeit_h, 5.5);
+  assert.equal(a.richtpreis_eur, 13.63);
+  assert.equal(a.entfernung_km, 316);
+  assert.equal(a.versand, true);
+  assert.deepEqual(a.masse_mm, [80, 80, 160]);
+  assert.equal(pruefen(a, cfg).ok, false); // ASA ist nicht freigegeben
+  assert.equal(pruefen(parseKarte(text.replace('ASA', 'PETG')), cfg).ok, true);
+});

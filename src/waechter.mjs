@@ -142,9 +142,10 @@ async function plattformA(browser) {
     const id = auftragsId('a-rp', a);
     if (stand.bekannt[id]) continue;
     stand.bekannt[id] = jetzt.toISOString();
-    if (pruefen(a, cfg).ok) {
-      await push(`Werkbank: Richtpreis-Auftrag ${a.richtpreis_eur ?? '?'} € – jetzt annehmen?`, `${a.titel}\n${kurz(a)}`, { url: BOARD_A, prio: 'high', tags: 'zap' });
-    }
+    const r = pruefen(a, cfg);
+    if (!r.ok) { log('A: Richtpreis-Auftrag passt nicht –', r.gruende.join('; ')); continue; }
+    log(`A: Richtpreis-Auftrag passt (${a.richtpreis_eur ?? '?'} €), Meldung`);
+    await push(`Werkbank: Richtpreis-Auftrag ${a.richtpreis_eur ?? '?'} € – jetzt annehmen?`, `${a.titel}\n${kurz(a)}`, { url: BOARD_A, prio: 'high', tags: 'zap' });
   }
   await ctx.close();
 }

@@ -11,12 +11,13 @@ export function parseKarte(text) {
     return i >= 0 ? zeilen[i + 1] : null;
   };
   const zeit = t.match(/(\d+):(\d{2})\s*h\s*Druckzeit/i);
+  const zeitEtwa = t.match(/etwa\s+([\d.,]+)\s*h\s*Druckzeit/i); // Schätzung der Plattform statt Slicer-Wert
   const masse = t.match(/(\d+)\s*Stück,\s*([\d.,]+)\s*×\s*([\d.,]+)\s*×\s*([\d.,]+)\s*mm/);
   const materialZeile = nach('Material') || '';
   return {
     titel: zeilen[0] || '(ohne Titel)',
-    gewicht_g: zahl(t.match(/([\d.,]+)\s*g\s*geslict/i)?.[1]),
-    druckzeit_h: zeit ? Number(zeit[1]) + Number(zeit[2]) / 60 : null,
+    gewicht_g: zahl(t.match(/([\d.,]+)\s*g\s*geslict/i)?.[1] ?? t.match(/etwa\s+([\d.,]+)\s*g\b/i)?.[1]),
+    druckzeit_h: zeit ? Number(zeit[1]) + Number(zeit[2]) / 60 : zeitEtwa ? zahl(zeitEtwa[1]) : null,
     material: materialZeile.split(',')[0].trim().toUpperCase() || null,
     materialZeile,
     stueck: masse ? Number(masse[1]) : 1,
@@ -24,7 +25,7 @@ export function parseKarte(text) {
     frist: nach('Frist'),
     entfernung_km: zahl(t.match(/etwa\s+([\d.]+)\s*km\s+entfernt/)?.[1]),
     versand: !/^Abholung/m.test(t),
-    richtpreis_eur: zahl(t.match(/([\d.,]+)\s*€\s*erhältst du zum Richtpreis/)?.[1]),
+    richtpreis_eur: zahl(t.match(/([\d.,]+)\s*€\s*erhältst du zum Richtpreis/)?.[1] ?? t.match(/([\d.,]+)\s*€\s*erhältst du(?!\s*mit deinem Preis)/)?.[1]),
     kunde_max_brutto_eur: zahl(t.match(/([\d.,]+)\s*€\s*zahlt der Kunde höchstens/)?.[1]),
     hatPreisNennen: /Preis nennen/.test(t),
     schonGeboten: /Wartet auf den Kunden|Deinen Preis ansehen|erhältst du mit deinem Preis|Angebot zurückziehen/i.test(t),

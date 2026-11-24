@@ -2,7 +2,7 @@
 // gegen die Regeln und bietet (Testmodus: meldet nur). Adressen kommen aus Umgebungsvariablen.
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { parseKarte, pruefen, gebot, lieferzeit, auftragsId, parseDetailB, pruefenB } from './regeln.mjs';
+import { parseKarte, pruefen, gebot, lieferzeit, auftragsId, parseDetailB, pruefenB, untergrenze, fristTage } from './regeln.mjs';
 
 const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
 const TESTMODUS = process.env.TESTMODUS ? process.env.TESTMODUS !== 'false' : cfg.testmodus;
@@ -23,7 +23,9 @@ stand.bekannt ??= {};
 stand.gebote ??= [];
 stand.meldungen ??= {};
 let jetzt = new Date();
-const geboteHeute = () => stand.gebote.filter((g) => g.zeit.startsWith(jetzt.toISOString().slice(0, 10))).length;
+// Zusagen = alles Verbindliche: Gebot (A), Annahme zum Richtpreis (A), Interesse (B). Ein gemeinsames Tageslimit.
+const MAX_ZUSAGEN = cfg.regeln.max_zusagen_pro_tag ?? 1;
+const zusagenHeute = () => stand.gebote.filter((g) => g.zeit.startsWith(jetzt.toISOString().slice(0, 10))).length;
 const log = (...x) => console.log(new Date().toISOString(), ...x);
 
 // drossel_h: dieselbe Meldung (gleicher Titel) höchstens einmal in so vielen Stunden.
@@ -92,7 +94,7 @@ async function plattformA(browser) {
       await push('Werkbank: Auftrag passt – bitte selbst prüfen', `${a.titel}\n${kurz(a)}\n${cfg.drucker.nur_melden_hinweis ?? ''}`, { url: BOARD_A, tags: 'eyes' });
       continue;
     }
-    if (geboteHeute() >= cfg.regeln.max_gebote_pro_tag) {
+    if (zusagenHeute() >= MAX_ZUSAGEN) {
       await push('Werkbank: Auftrag passt – Tageslimit erreicht', `${a.titel}\n${kurz(a)}`, { url: BOARD_A });
       continue;
     }
@@ -134,18 +136,62 @@ async function plattformA(browser) {
     await push(`Werkbank: Gebot ${betragTxt} € abgegeben`, `${a.titel}\n${kurz(a)}\nLieferzeit ${tage} Tage`, { url: BOARD_A, tags: 'white_check_mark' });
   }
 
-  // Richtpreis-Aufträge: nur melden (Sofortannahme erst nach 3 eigenen abgeschlossenen Aufträgen)
-  const annehmen = page.getByRole('button', { name: /^(Annehmen|Auftrag annehmen|Zum Richtpreis annehmen)/ });
+  // Richtpreis-Aufträge: wer zuerst annimmt, bekommt den Auftrag. Annahme ist sofort verbindlich.
+  const rpRegex = /^(Annehmen|Auftrag annehmen|Zum Richtpreis annehmen)/;
+  const annehmen = page.getByRole('button', { name: rpRegex });
   const m = await annehmen.count();
   for (let i = 0; i < m; i++) {
-    const a = parseKarte(await karteVon(annehmen.nth(i)).innerText());
+    const knopf = annehmen.nth(i);
+    const a = parseKarte(await karteVon(knopf).innerText());
     const id = auftragsId('a-rp', a);
     if (stand.bekannt[id]) continue;
     stand.bekannt[id] = jetzt.toISOString();
     const r = pruefen(a, cfg);
     if (!r.ok) { log('A: Richtpreis-Auftrag passt nicht –', r.gruende.join('; ')); continue; }
-    log(`A: Richtpreis-Auftrag passt (${a.richtpreis_eur ?? '?'} €), Meldung`);
-    await push(`Werkbank: Richtpreis-Auftrag ${a.richtpreis_eur ?? '?'} € – jetzt annehmen?`, `${a.titel}\n${kurz(a)}`, { url: BOARD_A, prio: 'high', tags: 'zap' });
+
+    const rp = cfg.richtpreis ?? {};
+    const ft = fristTage(a.frist, jetzt);
+    const kosten = untergrenze(a, cfg);
+    const halt = [];
+    if (TESTMODUS) halt.push('Testmodus');
+    if (!rp.annehmen) halt.push('Annahme ist ausgeschaltet');
+    if (a.gewicht_g == null || a.druckzeit_h == null || a.richtpreis_eur == null) halt.push('Gewicht, Druckzeit oder Betrag nicht lesbar');
+    if (!a.versand && a.entfernung_km != null && a.entfernung_km > (cfg.regeln.max_abholung_km ?? 50)) halt.push(`Abholung in ${a.entfernung_km} km`);
+    if (a.richtpreis_eur != null && rp.max_wert_eur != null && a.richtpreis_eur > rp.max_wert_eur) halt.push(`Betrag über ${rp.max_wert_eur} €`);
+    if (a.richtpreis_eur != null && a.richtpreis_eur < kosten) halt.push(`Betrag unter Selbstkosten ${kosten.toFixed(2)} €`);
+    if (ft !== null && ft < (rp.min_frist_tage ?? 7)) halt.push(`Frist in ${ft} Tagen`);
+    if (zusagenHeute() >= MAX_ZUSAGEN) halt.push('Tageslimit erreicht');
+    if (halt.length) {
+      log(`A: Richtpreis-Auftrag passt (${a.richtpreis_eur ?? '?'} €), nur Meldung –`, halt.join('; '));
+      await push(`Werkbank: Richtpreis-Auftrag ${a.richtpreis_eur ?? '?'} € – jetzt annehmen?`, `${a.titel}\n${kurz(a)}\nNicht selbst angenommen: ${halt.join('; ')}`, { url: BOARD_A, prio: 'high', tags: 'zap' });
+      continue;
+    }
+
+    await knopf.click();
+    await page.waitForTimeout(1500);
+    const dialog = page.getByRole('dialog');
+    if (await dialog.count()) {
+      const stamm = new URL(ZIEL_A).hostname.split('.')[0].toLowerCase();
+      const texte = (await dialog.first().getByRole('button').allInnerTexts().catch(() => [])).map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stamm));
+      log('A: Rückfrage der Seite, Knöpfe:', texte.join(' | ') || '(keine)');
+      await dialog.first().getByRole('button', { name: /annehmen|bestätigen|verbindlich/i }).first().click({ timeout: 5000 }).catch((e) => log('A: Bestätigen nicht gefunden –', String(e.message).slice(0, 80)));
+    }
+    await page.waitForTimeout(3000);
+    await page.goto(BOARD_A, { waitUntil: 'networkidle' });
+    const rest = page.getByRole('button', { name: rpRegex });
+    let nochDa = false;
+    for (let k = 0, kn = await rest.count(); k < kn; k++) {
+      if (auftragsId('a-rp', parseKarte(await karteVon(rest.nth(k)).innerText())) === id) nochDa = true;
+    }
+    if (nochDa) {
+      log(`A: Richtpreis-Auftrag ${a.richtpreis_eur} € – Annahme ohne sichtbare Wirkung`);
+      await push('Werkbank: Annahme evtl. nicht angekommen', `${a.titel}\n${kurz(a)}\nBitte selbst ansehen.`, { url: BOARD_A, prio: 'high', tags: 'warning' });
+    } else {
+      stand.gebote.push({ id, plattform: 'a-rp', titel: a.titel, betrag: a.richtpreis_eur, zeit: jetzt.toISOString() });
+      log(`A: Richtpreis-Auftrag ${a.richtpreis_eur} € angenommen (${zusagenHeute()} von ${MAX_ZUSAGEN} heute)`);
+      await push(`Werkbank: Auftrag angenommen, ${a.richtpreis_eur} €`, `${a.titel}\n${kurz(a)}\nVerbindlich. Zusage ${zusagenHeute()} von ${MAX_ZUSAGEN} heute.`, { url: BOARD_A, prio: 'high', tags: 'white_check_mark' });
+    }
+    break; // nach einem Klick ist die Liste neu: Rest in der nächsten Abfrage
   }
   await ctx.close();
 }
@@ -169,7 +215,6 @@ async function plattformB(browser) {
     await push('Werkbank: B hat Aufträge – Karte nicht erkannt', `${zaehler}. Bitte selbst ansehen.`, { url: BOARD_B, prio: 'high', drossel_h: 2 });
     return ctx.close();
   }
-  const interesseHeute = () => stand.gebote.filter((g) => g.plattform === 'b' && g.zeit.startsWith(jetzt.toISOString().slice(0, 10))).length;
 
   for (const href of hrefs) {
     const id = `b-${href.split('/').pop()}`;
@@ -198,7 +243,7 @@ async function plattformB(browser) {
         await push('Werkbank: B – Auftrag passt, Interesse bitte selbst melden', info, { url, prio: 'high', tags: 'zap' });
         continue;
       }
-      if (interesseHeute() >= (cfg.plattform_b?.max_interesse_pro_tag ?? 1)) {
+      if (zusagenHeute() >= MAX_ZUSAGEN) {
         await push('Werkbank: B – Auftrag passt, Tageslimit erreicht', info, { url, prio: 'high' });
         continue;
       }
@@ -236,7 +281,7 @@ async function abfrage() {
   }
 }
 
-log(`Modus: ${TESTMODUS ? 'Test (meldet nur)' : `live – A bietet, B ${cfg.plattform_b_live ? 'meldet Interesse' : 'meldet nur'}`}, höchstens ${cfg.regeln.max_gebote_pro_tag} Gebot(e) pro Tag`);
+log(`Modus: ${TESTMODUS ? 'Test (meldet nur)' : `live – A bietet, B ${cfg.plattform_b_live ? 'meldet Interesse' : 'meldet nur'}`}, Richtpreis ${cfg.richtpreis?.annehmen ? 'wird angenommen' : 'nur Meldung'}, höchstens ${MAX_ZUSAGEN} Zusage(n) pro Tag`);
 const start = Date.now();
 const ende = start + LAUFZEIT_MIN * 60000;
 for (let nr = 1; ; nr++) {

@@ -254,10 +254,18 @@ async function plattformB(browser) {
       const stammB = new URL(ZIEL_B).hostname.split('.')[0].toLowerCase();
       const sauber = (liste) => [...new Set(liste.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stammB)))].slice(0, 12);
       // Die Seite fragt nach: „Abbrechen | Ja, Interesse bekunden“ (kein eigenes Dialogfenster, gesehen am 24.11.2026).
-      const ja = detail.getByRole('button', { name: /^Ja, Interesse bekunden/ });
+      // Nur den sichtbaren Knopf nehmen; es kann eine verdeckte Kopie geben (25.11.2026: Klick lief 5 s ins Leere).
+      const ja = detail.getByRole('button', { name: /^Ja, Interesse bekunden/ }).filter({ visible: true });
       let bestaetigt = false;
       if (await ja.count()) {
-        await ja.first().click({ timeout: 5000 }).then(() => { bestaetigt = true; }).catch((e) => log('B: Bestätigen fehlgeschlagen –', String(e.message).slice(0, 80)));
+        const info = await ja.first().evaluate((el) => ({ aus: el.disabled, n: document.querySelectorAll('button').length })).catch(() => ({}));
+        if (info.aus) log('B: Bestätigen-Knopf ist gesperrt');
+        await ja.first().scrollIntoViewIfNeeded().catch(() => {});
+        await ja.first().click({ timeout: 8000 }).then(() => { bestaetigt = true; }).catch(async (e) => {
+          log('B: Bestätigen fehlgeschlagen –', String(e.message).split('\n').slice(0, 3).join(' / ').slice(0, 300));
+          // Zweiter Versuch ohne Wartebedingungen, falls ein Overlay den Klick abfängt
+          await ja.first().click({ timeout: 3000, force: true }).then(() => { bestaetigt = true; log('B: Bestätigen im zweiten Versuch'); }).catch(() => {});
+        });
         await ja.first().waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
       } else {
         log(`B: ${a.nummer ?? id} keine Rückfrage gefunden`);

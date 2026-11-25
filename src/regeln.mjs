@@ -114,6 +114,19 @@ export function auftragsId(plattform, a) {
 // ---------------------------------------------------------------- Plattform B (Detailseite)
 const dez = (x) => Number(String(x).replace(',', '.'));
 
+// Volumen je Teil mal Menge je Teil. Steht im Abschnitt eines Teils keine Menge, gilt die aus den Druckparametern.
+function volumenMalMenge(t, mengen) {
+  const teile = t.split(/TEIL \d+ VON \d+/i).slice(1).map((x) => x.split(/\n\s*(?:STATUS|DRUCKPARAMETER)\s*\n/)[0]);
+  const global = Number((t.split(/\n\s*DRUCKPARAMETER\s*\n/)[1] || '').match(/\n\s*Menge\s*\n\s*(\d+)/)?.[1]) || (mengen.length ? Math.max(...mengen) : 1);
+  const alleVol = [...t.matchAll(/~?\s*([\d.,]+)\s*cm³/gi)].reduce((sum, m) => sum + dez(m[1]), 0);
+  if (!teile.length) return alleVol * global;
+  return teile.reduce((sum, seg) => {
+    const v = seg.match(/~?\s*([\d.,]+)\s*cm³/i);
+    const n = Number(seg.match(/\n\s*Menge\s*\n\s*(\d+)/)?.[1]) || global;
+    return sum + (v ? dez(v[1]) * n : 0);
+  }, 0);
+}
+
 /** Liest den Text einer Auftrags-Detailseite (Plattform B) in ein Objekt. */
 export function parseDetailB(text) {
   const t = text.replace(/\u00a0/g, ' ');
@@ -129,6 +142,7 @@ export function parseDetailB(text) {
     teile_mm: teile,
     menge: mengen.length ? Math.max(...mengen) : 1,
     volumen_cm3: [...t.matchAll(/~?\s*([\d.,]+)\s*cm³/gi)].reduce((sum, m) => sum + dez(m[1]), 0),
+    volumen_mal_menge_cm3: volumenMalMenge(t, mengen),
     herstell_eur: euro('Herstellkosten inkl. Marge'),
     erhaelt_eur: euro('Du erhältst'),
     express: /^ja/i.test(alle('Express')[0] || ''),
@@ -150,7 +164,7 @@ export function pruefenB(a, cfg) {
   else if (b.max_wert_eur != null && a.herstell_eur > b.max_wert_eur) gr.push(`Wert ${a.herstell_eur} € über ${b.max_wert_eur} €`);
   // Selbstkosten grob aus dem Volumen (das Gewicht der Seite ist unzuverlässig)
   const eurG = Math.max(0, ...a.materialien.map((m) => cfg.preis.material_eur_pro_g[materialKlasse(m)] ?? cfg.preis.material_eur_pro_g.standard));
-  const kosten = a.volumen_cm3 * a.menge * (b.dichte_g_cm3 ?? 1.3) * eurG + (a.versand ? cfg.preis.verpackung_eur_versand : 0);
+  const kosten = (a.volumen_mal_menge_cm3 ?? a.volumen_cm3 * a.menge) * (b.dichte_g_cm3 ?? 1.3) * eurG + (a.versand ? cfg.preis.verpackung_eur_versand : 0);
   if (a.herstell_eur != null && a.herstell_eur < kosten) gr.push(`Vergütung ${a.herstell_eur} € unter Selbstkosten ${kosten.toFixed(2)} €`);
   const nurMelden = a.materialien.some((m) => materialFreigegeben(m, cfg.drucker.nur_melden ?? []));
   return { ok: gr.length === 0, gruende: gr, nurMelden, kosten_eur: Math.round(kosten * 100) / 100 };

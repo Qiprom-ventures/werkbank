@@ -257,3 +257,11 @@ Auftrag annehmen`;
   assert.equal(pruefen(a, cfg).ok, true); // ASA ist seit 24.11.2026 freigegeben
   assert.equal(pruefen(parseKarte(text.replace('ASA', 'PA-CF')), cfg).ok, false);
 });
+
+test('Plattform B: Volumen wird je Teil mit seiner Menge gerechnet', () => {
+  const a = parseDetailB(DETAIL_B());
+  assert.ok(Math.abs(a.volumen_mal_menge_cm3 - 69.3) < 0.01); // (1,6 + 1,7 + 19,8) × 3
+  // ein großes Teil einmal, ein kleines Teil fünfzigmal: nicht alles mal fünfzig
+  const gemischt = parseDetailB(DETAIL_B().replace('~19.8 cm³\nMaterial\nPETG\nMenge\n3', '~19.8 cm³\nMaterial\nPETG\nMenge\n1').replace('~1.7 cm³\nMaterial\nTPU\nMenge\n3', '~1.7 cm³\nMaterial\nTPU\nMenge\n50'));
+  assert.ok(Math.abs(gemischt.volumen_mal_menge_cm3 - (1.6 * 3 + 1.7 * 50 + 19.8 * 1)) < 0.01);
+});

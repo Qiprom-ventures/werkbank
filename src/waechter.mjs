@@ -253,16 +253,22 @@ async function plattformB(browser) {
       await detail.waitForTimeout(1200);
       const stammB = new URL(ZIEL_B).hostname.split('.')[0].toLowerCase();
       const sauber = (liste) => [...new Set(liste.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t && t.length <= 40 && !t.toLowerCase().includes(stammB)))].slice(0, 12);
-      const dlg = detail.getByRole('dialog');
-      if (await dlg.count()) {
-        log('B: Rückfrage der Seite, Knöpfe:', sauber(await dlg.first().getByRole('button').allInnerTexts().catch(() => [])).join(' | ') || '(keine)');
-        await dlg.first().getByRole('button', { name: /interesse|bestätigen|^ja/i }).first().click({ timeout: 5000 }).catch((e) => log('B: Bestätigen nicht gefunden –', String(e.message).slice(0, 80)));
+      // Die Seite fragt nach: „Abbrechen | Ja, Interesse bekunden“ (kein eigenes Dialogfenster, gesehen am 24.11.2026).
+      const ja = detail.getByRole('button', { name: /^Ja, Interesse bekunden/ });
+      let bestaetigt = false;
+      if (await ja.count()) {
+        await ja.first().click({ timeout: 5000 }).then(() => { bestaetigt = true; }).catch((e) => log('B: Bestätigen fehlgeschlagen –', String(e.message).slice(0, 80)));
+        await ja.first().waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+      } else {
+        log(`B: ${a.nummer ?? id} keine Rückfrage gefunden`);
       }
-      await knopfB.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+      await detail.waitForTimeout(1500);
       const nachher = await detail.locator('main').innerText().catch(() => '');
       const zustand = (nachher.match(/Interesse (bekundet|zurückziehen|angemeldet|vorgemerkt)[^\n]{0,30}|Du bist dabei[^\n]{0,30}|Vergabe in \d\d:\d\d/gi) || []).slice(0, 4).join(' / ');
       log(`B: ${a.nummer ?? id} nach dem Klick – Knöpfe:`, sauber(await detail.locator('main').getByRole('button').allInnerTexts().catch(() => [])).join(' | ') || '(keine)', '– Zustand:', zustand || '(nichts erkannt)');
-      if ((await knopfB.count()) && !/zurückziehen|bekundet|vorgemerkt|angemeldet|du bist dabei/i.test(nachher)) {
+      const rueckfrageOffen = (await ja.count()) > 0;
+      const erkannt = /zurückziehen|bekundet|vorgemerkt|angemeldet|du bist dabei/i.test(nachher);
+      if (!erkannt && (!bestaetigt || rueckfrageOffen)) {
         log(`B: ${a.nummer ?? id} Klick ohne sichtbare Wirkung`);
         await push('Werkbank: B – Interesse evtl. nicht angekommen', info, { url, prio: 'high', tags: 'warning' });
         continue;

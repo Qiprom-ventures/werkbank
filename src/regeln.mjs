@@ -139,6 +139,7 @@ export function parseDetailB(text) {
     nummer: (t.match(/\b[A-Z]{2}-\d{3,}\b/) || [])[0] || null,
     titel: zeilen[1] || zeilen[0] || '(ohne Titel)',
     materialien: [...new Set(alle('Material').map((m) => m.toUpperCase()))],
+    farben: [...new Set(alle('Farbe').map((f) => f.trim()))],
     teile_mm: teile,
     menge: mengen.length ? Math.max(...mengen) : 1,
     volumen_cm3: [...t.matchAll(/~?\s*([\d.,]+)\s*cm³/gi)].reduce((sum, m) => sum + dez(m[1]), 0),
@@ -167,5 +168,9 @@ export function pruefenB(a, cfg) {
   const kosten = (a.volumen_mal_menge_cm3 ?? a.volumen_cm3 * a.menge) * (b.dichte_g_cm3 ?? 1.3) * eurG + (a.versand ? cfg.preis.verpackung_eur_versand : 0);
   if (a.herstell_eur != null && a.herstell_eur < kosten) gr.push(`Vergütung ${a.herstell_eur} € unter Selbstkosten ${kosten.toFixed(2)} €`);
   const nurMelden = a.materialien.some((m) => materialFreigegeben(m, cfg.drucker.nur_melden ?? []));
-  return { ok: gr.length === 0, gruende: gr, nurMelden, kosten_eur: Math.round(kosten * 100) / 100 };
+  // Die Rückfrage verlangt ein Häkchen „Material und Farbe vorrätig“. Selbst setzen nur, wenn die Farbe egal ist
+  // oder in der Liste der vorrätigen Farben steht.
+  const frei = (b.farben_vorraetig ?? []).map((f) => f.toLowerCase());
+  const farbeOk = a.farben.length > 0 && a.farben.every((f) => /^(egal|beliebig|any)$/i.test(f) || frei.includes(f.toLowerCase()));
+  return { ok: gr.length === 0, gruende: gr, nurMelden, farbeOk, kosten_eur: Math.round(kosten * 100) / 100 };
 }

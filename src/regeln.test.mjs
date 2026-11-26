@@ -265,3 +265,12 @@ test('Plattform B: Volumen wird je Teil mit seiner Menge gerechnet', () => {
   const gemischt = parseDetailB(DETAIL_B().replace('~19.8 cm³\nMaterial\nPETG\nMenge\n3', '~19.8 cm³\nMaterial\nPETG\nMenge\n1').replace('~1.7 cm³\nMaterial\nTPU\nMenge\n3', '~1.7 cm³\nMaterial\nTPU\nMenge\n50'));
   assert.ok(Math.abs(gemischt.volumen_mal_menge_cm3 - (1.6 * 3 + 1.7 * 50 + 19.8 * 1)) < 0.01);
 });
+
+test('Plattform B: Häkchen nur bei Farbe egal oder vorrätiger Farbe', () => {
+  const mitFarbe = (f) => DETAIL_B('PETG', 'PLA').replace('DRUCKPARAMETER\nMaterial', `DRUCKPARAMETER\nFarbe\n${f}\nMaterial`);
+  assert.equal(pruefenB(parseDetailB(mitFarbe('Egal')), cfg).farbeOk, true);
+  assert.equal(pruefenB(parseDetailB(mitFarbe('Rot')), cfg).farbeOk, false);
+  const cfgRot = { ...cfg, plattform_b: { ...cfg.plattform_b, farben_vorraetig: ['Rot'] } };
+  assert.equal(pruefenB(parseDetailB(mitFarbe('Rot')), cfgRot).farbeOk, true);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA')), cfg).farbeOk, false); // Farbe nicht lesbar: nur Meldung
+});

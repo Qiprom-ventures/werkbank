@@ -247,6 +247,11 @@ async function plattformB(browser) {
         await push('Werkbank: B – Auftrag passt, Tageslimit erreicht', info, { url, prio: 'high' });
         continue;
       }
+      if (!r.farbeOk) {
+        log(`B: ${a.nummer ?? id} passt, Farbe vorgegeben – nur Meldung`);
+        await push('Werkbank: B – Auftrag passt, Farbe vorgegeben, bitte selbst melden', `${info}\nFarbe: ${a.farben.join(', ') || '?'}`, { url, prio: 'high', tags: 'zap' });
+        continue;
+      }
       const knopfB = detail.getByRole('button', { name: 'Interesse bekunden' });
       await knopfB.click();
       // Falls die Seite nachfragt: bestätigen. Dann bis zu 10 s warten, ob der Knopf verschwindet.
@@ -257,6 +262,13 @@ async function plattformB(browser) {
       // Nur den sichtbaren Knopf nehmen; es kann eine verdeckte Kopie geben (25.11.2026: Klick lief 5 s ins Leere).
       const ja = detail.getByRole('button', { name: /^Ja, Interesse bekunden/ }).filter({ visible: true });
       let bestaetigt = false;
+      // Vor dem Bestätigen muss das Häkchen „Material und Farbe vorrätig“ gesetzt sein, sonst ist „Ja“ gesperrt (26.11.2026).
+      const haken = detail.locator('input[type="checkbox"]').filter({ visible: true });
+      if (await haken.count()) {
+        await haken.last().check({ timeout: 5000 }).then(() => log('B: Häkchen Material/Farbe gesetzt')).catch((e) => log('B: Häkchen nicht gesetzt –', String(e.message).slice(0, 120)));
+      } else {
+        log('B: kein Häkchen in der Rückfrage gefunden');
+      }
       if (await ja.count()) {
         const info = await ja.first().evaluate((el) => ({ aus: el.disabled, n: document.querySelectorAll('button').length })).catch(() => ({}));
         if (info.aus) log('B: Bestätigen-Knopf ist gesperrt');

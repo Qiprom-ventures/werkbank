@@ -105,9 +105,10 @@ test('ABS, ASA und TPU werden geboten, Faser und PC bleiben gesperrt; „nur mel
   assert.equal(pruefen(a, cfg).nurMelden, false);
   assert.equal(pruefen({ ...a, material: 'ASA' }, cfg).ok, true); // seit 24.11.2026 freigegeben
   assert.equal(lieferzeit({ ...a, material: 'ASA' }, cfg), 6);
-  assert.equal(pruefen({ ...a, material: 'PC' }, cfg).ok, false);
+  assert.equal(pruefen({ ...a, material: 'PC' }, cfg).ok, true); // seit 26.11.2026 alles, was der X2D druckt
+  assert.equal(pruefen({ ...a, material: 'RESIN' }, cfg).ok, false);
   assert.equal(pruefen({ ...a, material: 'ABS-GF' }, cfg).ok, false);
-  assert.equal(pruefen({ ...a, material: 'PA6-CF' }, cfg).ok, false);
+  assert.equal(pruefen({ ...a, material: 'PA6-CF' }, cfg).ok, true);
 });
 
 // Nachgebildet nach der Detailseite von Plattform B (24.11.2026), Titel und Nummer erfunden
@@ -189,7 +190,8 @@ test('Plattform B: TPU, PLA, PETG frei, Sondermaterial und Express raus', () => 
   assert.equal(frei.ok, true);
   assert.equal(frei.nurMelden, false);
   assert.ok(frei.kosten_eur < 15.47);
-  assert.equal(pruefenB(parseDetailB(DETAIL_B('PA6-CF', 'PLA')), cfg).ok, false);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('PA6-CF', 'PLA')), cfg).ok, true);
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('RESIN', 'PLA')), cfg).ok, false);
   assert.equal(pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA').replace('Express\nNein', 'Express\nJa')), cfg).ok, false);
   const gross = parseDetailB(DETAIL_B('PETG', 'PLA').replace(/63 × 28 × 130 mm/g, '300 × 28 × 130 mm'));
   assert.equal(pruefenB(gross, cfg).ok, false);
@@ -255,7 +257,7 @@ Auftrag annehmen`;
   assert.equal(a.versand, true);
   assert.deepEqual(a.masse_mm, [80, 80, 160]);
   assert.equal(pruefen(a, cfg).ok, true); // ASA ist seit 24.11.2026 freigegeben
-  assert.equal(pruefen(parseKarte(text.replace('ASA', 'PA-CF')), cfg).ok, false);
+  assert.equal(pruefen(parseKarte(text.replace('ASA', 'RESIN')), cfg).ok, false);
 });
 
 test('Plattform B: Volumen wird je Teil mit seiner Menge gerechnet', () => {
@@ -266,7 +268,13 @@ test('Plattform B: Volumen wird je Teil mit seiner Menge gerechnet', () => {
   assert.ok(Math.abs(gemischt.volumen_mal_menge_cm3 - (1.6 * 3 + 1.7 * 50 + 19.8 * 1)) < 0.01);
 });
 
-test('Plattform B: Häkchen nur bei Farbe egal oder vorrätiger Farbe', () => {
+const CFG0 = cfg;
+test('Plattform B: alle_farben sagt jede Farbe zu', () => {
+  assert.equal(pruefenB(parseDetailB(DETAIL_B('PETG', 'PLA')), cfg).farbeOk, true);
+});
+
+test('Plattform B: Häkchen nur bei Farbe egal oder vorrätiger Farbe, außer alle_farben', () => {
+  const cfg = { ...CFG0, plattform_b: { ...CFG0.plattform_b, alle_farben: false } };
   const mitFarbe = (f) => DETAIL_B('PETG', 'PLA').replace('DRUCKPARAMETER\nMaterial', `DRUCKPARAMETER\nFarbe\n${f}\nMaterial`);
   assert.equal(pruefenB(parseDetailB(mitFarbe('Egal')), cfg).farbeOk, true);
   assert.equal(pruefenB(parseDetailB(mitFarbe('Rot')), cfg).farbeOk, false);

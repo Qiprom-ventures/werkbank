@@ -171,6 +171,7 @@ export function pruefenB(a, cfg) {
   // Die Rückfrage verlangt ein Häkchen „Material und Farbe vorrätig“. Selbst setzen nur, wenn die Farbe egal ist
   // oder in der Liste der vorrätigen Farben steht.
   const frei = (b.farben_vorraetig ?? []).map((f) => f.toLowerCase());
-  const farbeOk = a.farben.length > 0 && a.farben.every((f) => /^(egal|beliebig|any)$/i.test(f) || frei.includes(f.toLowerCase()));
+  // alle_farben: Falk sagt jede Farbe zu und bestellt fehlende nach (26.11.2026).
+  const farbeOk = b.alle_farben === true || a.farben.length > 0 && a.farben.every((f) => /^(egal|beliebig|any)$/i.test(f) || frei.includes(f.toLowerCase()));
   return { ok: gr.length === 0, gruende: gr, nurMelden, farbeOk, kosten_eur: Math.round(kosten * 100) / 100 };
 }
